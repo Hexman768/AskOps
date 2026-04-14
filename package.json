@@ -1,0 +1,13 @@
+{
+  "name": "askops",
+  "version": "1.0.0",
+  "description": "Store resolved IT issues and known solutions.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

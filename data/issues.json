@@ -1,0 +1,22 @@
+[
+  {
+    "id": 1,
+    "title": "VPN Access Fails After Password Rotation",
+    "problem": "User updated corporate password but VPN client keeps rejecting credentials and cannot connect remotely.",
+    "solution": "Clear cached credentials in the VPN client, sign out of SSO session, and re-authenticate with the new password.",
+    "issueType": "Password",
+    "difficulty": "Easy",
+    "solutionConfidence": 85,
+    "createdAt": "2026-04-13T20:00:00.000Z"
+  },
+  {
+    "id": 2,
+    "title": "Node Build Fails on CI with Out-of-Memory",
+    "problem": "A frontend build intermittently fails in CI due to JavaScript heap out-of-memory errors.",
+    "solution": "Increase Node memory with NODE_OPTIONS=--max-old-space-size=4096 and split the build into smaller chunks.",
+    "issueType": "Software Engineering",
+    "difficulty": "Hard",
+    "solutionConfidence": 70,
+    "createdAt": "2026-04-13T20:30:00.000Z"
+  }
+]
