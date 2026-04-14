@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AskOps Issue Library</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header>
+        <h1>AskOps Issue Library</h1>
+        <p>Store resolved IT problems and proven solutions so the whole team can reuse them.</p>
+      </header>
+
+      <section class="panel">
+        <h2>Add Resolved Issue</h2>
+        <form id="issue-form">
+          <label>
+            Title
+            <input type="text" name="title" required minlength="3" />
+          </label>
+
+          <label>
+            Problem Description
+            <textarea name="problem" required minlength="10"></textarea>
+          </label>
+
+          <label>
+            Solution
+            <textarea name="solution" required minlength="10"></textarea>
+          </label>
+
+          <div class="grid two-col">
+            <label>
+              Issue Type
+              <select name="issueType" id="issueType" required></select>
+            </label>
+
+            <label>
+              Difficulty
+              <select name="difficulty" id="difficulty" required></select>
+            </label>
+          </div>
+
+          <label>
+            Solution Likelihood (% chance this solves it)
+            <input type="number" name="solutionConfidence" min="0" max="100" required />
+          </label>
+
+          <button type="submit">Save Issue</button>
+          <p id="form-message" class="message"></p>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h2>Issue Search</h2>
+        <div class="grid three-col filters">
+          <label>
+            Type
+            <select id="filterType">
+              <option value="">All</option>
+            </select>
+          </label>
+
+          <label>
+            Difficulty
+            <select id="filterDifficulty">
+              <option value="">All</option>
+            </select>
+          </label>
+
+          <label>
+            Minimum Confidence
+            <input type="number" id="filterConfidence" min="0" max="100" value="0" />
+          </label>
+        </div>
+        <button id="refresh-btn" type="button">Apply Filters</button>
+      </section>
+
+      <section class="panel">
+        <h2>Stored Issues</h2>
+        <div id="issue-list" class="issue-list"></div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
