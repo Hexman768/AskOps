@@ -95,6 +95,22 @@ app.get('/api/issues', async (req, res) => {
   res.json(filtered);
 });
 
+app.get('/api/issues/:id', async (req, res) => {
+  const issueId = Number(req.params.id);
+  if (!Number.isInteger(issueId) || issueId <= 0) {
+    return res.status(400).json({ error: 'Issue id must be a positive integer.' });
+  }
+
+  const issues = await readIssues();
+  const issue = issues.find((item) => item.id === issueId);
+
+  if (!issue) {
+    return res.status(404).json({ error: 'Issue not found.' });
+  }
+
+  return res.json(issue);
+});
+
 app.post('/api/issues', async (req, res) => {
   const payload = req.body;
   const { errors, confidence } = validateIssue(payload);
