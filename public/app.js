@@ -1,88 +1,84 @@
-const form = document.getElementById('issue-form');
-const formMessage = document.getElementById('form-message');
 const issueList = document.getElementById('issue-list');
-const issueTypeSelect = document.getElementById('issueType');
-const difficultySelect = document.getElementById('difficulty');
-const filterType = document.getElementById('filterType');
-const filterDifficulty = document.getElementById('filterDifficulty');
-const filterConfidence = document.getElementById('filterConfidence');
-const refreshBtn = document.getElementById('refresh-btn');
+const searchForm = document.getElementById('search-form');
+const searchInput = document.getElementById('search-input');
+const searchStatus = document.getElementById('search-status');
+const clearSearchButton = document.getElementById('clear-search');
 
-async function loadMetadata() {
-  const res = await fetch('/api/metadata');
-  const metadata = await res.json();
+const RECENT_ISSUE_LIMIT = 6;
+let allIssues = [];
 
-  for (const type of metadata.issueTypes) {
-    issueTypeSelect.insertAdjacentHTML('beforeend', `<option value="${type}">${type}</option>`);
-    filterType.insertAdjacentHTML('beforeend', `<option value="${type}">${type}</option>`);
-  }
-
-  for (const level of metadata.difficultyLevels) {
-    difficultySelect.insertAdjacentHTML('beforeend', `<option value="${level}">${level}</option>`);
-    filterDifficulty.insertAdjacentHTML('beforeend', `<option value="${level}">${level}</option>`);
-  }
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
 
 function issueCard(issue) {
   const created = new Date(issue.createdAt).toLocaleString();
   return `
     <article class="issue-card">
-      <h3>${issue.title}</h3>
+      <h3>${escapeHtml(issue.title)}</h3>
       <div class="issue-meta">
-        <span class="pill">Type: ${issue.issueType}</span>
-        <span class="pill">Difficulty: ${issue.difficulty}</span>
-        <span class="pill">Confidence: ${issue.solutionConfidence}%</span>
-        <span class="pill">Logged: ${created}</span>
+        <span class="pill">Type: ${escapeHtml(issue.issueType)}</span>
+        <span class="pill">Difficulty: ${escapeHtml(issue.difficulty)}</span>
+        <span class="pill">Confidence: ${escapeHtml(issue.solutionConfidence)}%</span>
+        <span class="pill">Logged: ${escapeHtml(created)}</span>
       </div>
-      <p><strong>Problem:</strong> ${issue.problem}</p>
-      <p><strong>Solution:</strong> ${issue.solution}</p>
+      <p><strong>Problem:</strong> ${escapeHtml(issue.problem)}</p>
+      <p><strong>Solution:</strong> ${escapeHtml(issue.solution)}</p>
     </article>
   `;
 }
 
-async function loadIssues() {
-  const params = new URLSearchParams();
-  if (filterType.value) params.set('issueType', filterType.value);
-  if (filterDifficulty.value) params.set('difficulty', filterDifficulty.value);
-  if (filterConfidence.value !== '') params.set('minConfidence', filterConfidence.value);
-
-  const res = await fetch(`/api/issues?${params.toString()}`);
-  const issues = await res.json();
-
+function renderIssues(issues) {
   if (issues.length === 0) {
-    issueList.innerHTML = '<p>No issues found for current filters.</p>';
+    issueList.innerHTML = '<p>No issues found for this search.</p>';
     return;
   }
 
   issueList.innerHTML = issues.map(issueCard).join('');
 }
 
-form.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  formMessage.textContent = '';
+function updateLanding(query = '') {
+  const trimmedQuery = query.trim().toLowerCase();
+  const hasQuery = trimmedQuery.length > 0;
 
-  const payload = Object.fromEntries(new FormData(form).entries());
-
-  const res = await fetch('/api/issues', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-
-  if (!res.ok) {
-    const data = await res.json();
-    formMessage.textContent = data.errors?.join(' ') || 'Unable to save issue.';
+  if (!hasQuery) {
+    renderIssues(allIssues.slice(0, RECENT_ISSUE_LIMIT));
+    searchStatus.textContent = `Showing ${Math.min(allIssues.length, RECENT_ISSUE_LIMIT)} most recent issues.`;
+    clearSearchButton.hidden = true;
     return;
   }
 
-  form.reset();
-  formMessage.textContent = 'Issue saved.';
-  await loadIssues();
+  const results = allIssues.filter((issue) => {
+    const haystack = `${issue.title} ${issue.problem} ${issue.solution} ${issue.issueType} ${issue.difficulty}`.toLowerCase();
+    return haystack.includes(trimmedQuery);
+  });
+
+  renderIssues(results);
+  searchStatus.textContent = `Found ${results.length} issue${results.length === 1 ? '' : 's'} for "${query.trim()}".`;
+  clearSearchButton.hidden = false;
+}
+
+async function loadIssues() {
+  const res = await fetch('/api/issues');
+  allIssues = await res.json();
+  updateLanding();
+}
+
+searchForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  updateLanding(searchInput.value);
 });
 
-refreshBtn.addEventListener('click', loadIssues);
+clearSearchButton.addEventListener('click', () => {
+  searchInput.value = '';
+  updateLanding();
+});
 
 (async function init() {
-  await loadMetadata();
   await loadIssues();
 })();
