@@ -19,17 +19,24 @@ function escapeHtml(value) {
 function issueCard(issue) {
   const created = new Date(issue.createdAt).toLocaleString();
   return `
-    <article class="issue-card">
-      <h3>${escapeHtml(issue.title)}</h3>
-      <div class="issue-meta">
-        <span class="pill">Type: ${escapeHtml(issue.issueType)}</span>
-        <span class="pill">Difficulty: ${escapeHtml(issue.difficulty)}</span>
-        <span class="pill">Confidence: ${escapeHtml(issue.solutionConfidence)}%</span>
-        <span class="pill">Logged: ${escapeHtml(created)}</span>
-      </div>
-      <p><strong>Problem:</strong> ${escapeHtml(issue.problem)}</p>
-      <p><strong>Solution:</strong> ${escapeHtml(issue.solution)}</p>
-    </article>
+    <a
+      class="issue-link-card"
+      href="/issue.html?id=${encodeURIComponent(issue.id)}"
+      data-issue-id="${encodeURIComponent(issue.id)}"
+      aria-label="Open issue ${escapeHtml(issue.title)}"
+    >
+      <article class="issue-card">
+        <h3>${escapeHtml(issue.title)}</h3>
+        <div class="issue-meta">
+          <span class="pill">Type: ${escapeHtml(issue.issueType)}</span>
+          <span class="pill">Difficulty: ${escapeHtml(issue.difficulty)}</span>
+          <span class="pill">Confidence: ${escapeHtml(issue.solutionConfidence)}%</span>
+          <span class="pill">Logged: ${escapeHtml(created)}</span>
+        </div>
+        <p><strong>Problem:</strong> ${escapeHtml(issue.problem)}</p>
+        <p><strong>Solution:</strong> ${escapeHtml(issue.solution)}</p>
+      </article>
+    </a>
   `;
 }
 
@@ -77,6 +84,19 @@ searchForm.addEventListener('submit', (event) => {
 clearSearchButton.addEventListener('click', () => {
   searchInput.value = '';
   updateLanding();
+});
+
+issueList.addEventListener('click', (event) => {
+  const link = event.target.closest('.issue-link-card');
+  if (!link) return;
+
+  const issueId = Number(link.dataset.issueId);
+  if (!Number.isInteger(issueId)) return;
+
+  const issue = allIssues.find((item) => item.id === issueId);
+  if (!issue) return;
+
+  sessionStorage.setItem(`askops_issue_${issueId}`, JSON.stringify(issue));
 });
 
 (async function init() {

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Issue Details | AskOps</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="issue-page">
+      <nav class="issue-topbar">
+        <a href="/" class="back-link">Back to Search</a>
+      </nav>
+
+      <header class="jira-header">
+        <div>
+          <p id="issue-key" class="jira-key">ASKOPS-</p>
+          <h1 id="issue-title">Loading issue...</h1>
+        </div>
+        <div class="jira-badges" id="jira-badges"></div>
+      </header>
+
+      <section class="jira-layout">
+        <article class="jira-main-card">
+          <h2>Description</h2>
+          <p id="issue-problem">Loading...</p>
+
+          <h2>Resolution</h2>
+          <p id="issue-solution">Loading...</p>
+        </article>
+
+        <aside class="jira-side-card">
+          <h2>Details</h2>
+          <dl class="jira-details-list">
+            <dt>Issue Type</dt>
+            <dd id="issue-type"></dd>
+
+            <dt>Difficulty</dt>
+            <dd id="issue-difficulty"></dd>
+
+            <dt>Solution Confidence</dt>
+            <dd id="issue-confidence"></dd>
+
+            <dt>Logged At</dt>
+            <dd id="issue-created-at"></dd>
+          </dl>
+        </aside>
+      </section>
+    </main>
+
+    <script src="issue.js"></script>
+  </body>
+</html>
