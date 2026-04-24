@@ -14,6 +14,16 @@ AskOps is a small web app for storing previously resolved IT issues and their so
 - Filter issues by type, difficulty, and minimum confidence.
 - Data persistence in `data/issues.json` (committed to git).
 
+## Screenshots
+
+### Landing Page
+
+![AskOps Landing Page](docs/screenshots/landing-page.png)
+
+### Issue Detail Page
+
+![AskOps Issue Detail Page](docs/screenshots/issue-page.png)
+
 ## Run locally
 
 ```bash
