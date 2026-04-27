@@ -18,5 +18,15 @@
     "difficulty": "Hard",
     "solutionConfidence": 70,
     "createdAt": "2026-04-13T20:30:00.000Z"
+  },
+  {
+    "id": 3,
+    "title": "test issue",
+    "problem": "test issue",
+    "solution": "test issue",
+    "issueType": "IT",
+    "difficulty": "Very Easy",
+    "solutionConfidence": 100,
+    "createdAt": "2026-04-27T20:30:14.844Z"
   }
 ]
