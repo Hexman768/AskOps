@@ -1,7 +1,7 @@
 const express = require('express');
+const { Octokit } = require('@octokit/rest');
 const { execFile } = require('child_process');
 const fs = require('fs/promises');
-const https = require('https');
 const os = require('os');
 const path = require('path');
 const { promisify } = require('util');
@@ -13,6 +13,8 @@ const DATA_FILE = path.join(DATA_DIR, 'issues.json');
 const REPO_ROOT = __dirname;
 const BASE_BRANCH = 'master';
 const execFileAsync = promisify(execFile);
+const KEYCHAIN_SERVICE = 'askops-github-token';
+const KEYCHAIN_ACCOUNT = 'default';
 
 const ISSUE_TYPES = ['IT', 'Password', 'Software Engineering', 'Solution', 'Product', 'Other'];
 const DIFFICULTY_LEVELS = ['Very Easy', 'Easy', 'Medium', 'Hard', 'Very Hard'];
@@ -58,6 +60,24 @@ async function commandExists(command) {
   }
 }
 
+async function runCommandOptional(command, args, cwd = REPO_ROOT) {
+  try {
+    const { stdout, stderr } = await execFileAsync(command, args, { cwd });
+    return {
+      ok: true,
+      stdout: stdout?.trim() || '',
+      stderr: stderr?.trim() || ''
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      stdout: error.stdout?.trim() || '',
+      stderr: error.stderr?.trim() || '',
+      error
+    };
+  }
+}
+
 function slugify(value) {
   return value
     .toLowerCase()
@@ -76,52 +96,72 @@ function parseGitHubRemote(remoteUrl) {
 }
 
 async function createGitHubPrWithApi({ owner, repo, headBranch, title, body }) {
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) return null;
+  const tokenInfo = await getGitHubToken();
+  if (!tokenInfo?.token) return null;
 
-  const payload = JSON.stringify({
+  const octokit = new Octokit({ auth: tokenInfo.token });
+  const response = await octokit.pulls.create({
+    owner,
+    repo,
     title,
     body,
     base: BASE_BRANCH,
     head: headBranch
   });
 
-  const requestOptions = {
-    hostname: 'api.github.com',
-    path: `/repos/${owner}/${repo}/pulls`,
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'User-Agent': 'askops-server',
-      Accept: 'application/vnd.github+json',
-      'Content-Type': 'application/json',
-      'Content-Length': Buffer.byteLength(payload)
-    }
-  };
+  return response.data.html_url || null;
+}
 
-  const response = await new Promise((resolve, reject) => {
-    const request = https.request(requestOptions, (res) => {
-      let data = '';
-      res.on('data', (chunk) => {
-        data += chunk;
-      });
-      res.on('end', () => {
-        resolve({ statusCode: res.statusCode || 500, body: data });
-      });
-    });
+async function getTokenFromKeychain() {
+  const lookup = await runCommandOptional('security', [
+    'find-generic-password',
+    '-a',
+    KEYCHAIN_ACCOUNT,
+    '-s',
+    KEYCHAIN_SERVICE,
+    '-w'
+  ]);
 
-    request.on('error', reject);
-    request.write(payload);
-    request.end();
-  });
+  if (!lookup.ok) return null;
+  return lookup.stdout || null;
+}
 
-  const parsed = response.body ? JSON.parse(response.body) : {};
-  if (response.statusCode < 200 || response.statusCode >= 300) {
-    const message = parsed.message || 'Unable to create GitHub PR via API.';
-    throw new Error(message);
+async function saveTokenToKeychain(token) {
+  await runCommand('security', [
+    'add-generic-password',
+    '-a',
+    KEYCHAIN_ACCOUNT,
+    '-s',
+    KEYCHAIN_SERVICE,
+    '-w',
+    token,
+    '-U'
+  ]);
+}
+
+async function getGitHubToken() {
+  if (process.env.GITHUB_TOKEN) {
+    return {
+      token: process.env.GITHUB_TOKEN,
+      source: 'env'
+    };
   }
 
-  return parsed.html_url || null;
+  const keychainToken = await getTokenFromKeychain();
+  if (keychainToken) {
+    return {
+      token: keychainToken,
+      source: 'keychain'
+    };
+  }
+
+  return null;
+}
+
+async function getGitHubIdentity(token) {
+  const octokit = new Octokit({ auth: token });
+  const response = await octokit.users.getAuthenticated();
+  return response.data?.login || null;
 }
 
 async function createIssuePr(issueInput) {
@@ -179,33 +219,34 @@ async function createIssuePr(issueInput) {
     ].join('\n');
 
     let prUrl = null;
+    const { stdout: remoteUrl } = await runCommand('git', ['config', '--get', 'remote.origin.url'], REPO_ROOT);
+    const repoInfo = parseGitHubRemote(remoteUrl);
 
-    if (await commandExists('gh')) {
+    if (!repoInfo) {
+      throw new Error('Unable to parse GitHub remote URL.');
+    }
+
+    prUrl = await createGitHubPrWithApi({
+      owner: repoInfo.owner,
+      repo: repoInfo.repo,
+      headBranch: branchName,
+      title: prTitle,
+      body: prBody
+    });
+
+    if (!prUrl && (await commandExists('gh'))) {
       const { stdout } = await runCommand(
         'gh',
         ['pr', 'create', '--base', BASE_BRANCH, '--head', branchName, '--title', prTitle, '--body', prBody],
         tempRoot
       );
       prUrl = stdout.split('\n').find((line) => line.startsWith('http')) || null;
-    } else {
-      const { stdout: remoteUrl } = await runCommand('git', ['config', '--get', 'remote.origin.url'], REPO_ROOT);
-      const repoInfo = parseGitHubRemote(remoteUrl);
+    }
 
-      if (!repoInfo) {
-        throw new Error('Unable to parse GitHub remote URL; install gh CLI or set a valid origin URL.');
-      }
-
-      prUrl = await createGitHubPrWithApi({
-        owner: repoInfo.owner,
-        repo: repoInfo.repo,
-        headBranch: branchName,
-        title: prTitle,
-        body: prBody
-      });
-
-      if (!prUrl) {
-        throw new Error('gh CLI is not installed and GITHUB_TOKEN is not set for GitHub API PR creation.');
-      }
+    if (!prUrl) {
+      throw new Error(
+        'PR creation failed. Connect GitHub in the app (recommended) or set GITHUB_TOKEN, or install/authenticate gh CLI.'
+      );
     }
 
     return { issue: newIssue, branchName, prUrl };
@@ -253,6 +294,44 @@ function validateIssue(payload) {
 
 app.get('/api/metadata', (_req, res) => {
   res.json({ issueTypes: ISSUE_TYPES, difficultyLevels: DIFFICULTY_LEVELS });
+});
+
+app.get('/api/github/auth-status', async (_req, res) => {
+  try {
+    const tokenInfo = await getGitHubToken();
+    if (!tokenInfo) {
+      return res.json({ connected: false, source: null, login: null });
+    }
+
+    const login = await getGitHubIdentity(tokenInfo.token);
+    return res.json({
+      connected: true,
+      source: tokenInfo.source,
+      login
+    });
+  } catch (error) {
+    return res.status(500).json({
+      connected: false,
+      error: error.message || 'Unable to validate GitHub token.'
+    });
+  }
+});
+
+app.post('/api/github/connect', async (req, res) => {
+  const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+  if (!token) {
+    return res.status(400).json({ error: 'GitHub token is required.' });
+  }
+
+  try {
+    const login = await getGitHubIdentity(token);
+    await saveTokenToKeychain(token);
+    return res.status(201).json({ connected: true, source: 'keychain', login });
+  } catch (error) {
+    return res.status(400).json({
+      error: error.message || 'Unable to validate and save the GitHub token.'
+    });
+  }
 });
 
 app.get('/api/issues', async (req, res) => {

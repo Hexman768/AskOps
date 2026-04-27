@@ -8,6 +8,7 @@
     "dev": "node server.js"
   },
   "dependencies": {
+    "@octokit/rest": "^18.12.0",
     "express": "^4.21.2"
   }
 }

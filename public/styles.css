@@ -34,6 +34,12 @@ body.modal-open {
   align-items: center;
 }
 
+.top-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
 .nav-home,
 .nav-create-link {
   text-decoration: none;
@@ -140,6 +146,23 @@ button {
 
 button:hover {
   filter: brightness(0.96);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  filter: none;
+}
+
+#create-submit-btn:disabled {
+  color: #d9deec;
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      #7b87a6 0 10px,
+      #6f7a97 10px 20px
+    );
+  border: 1px solid #6a7592;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 .secondary-btn {
@@ -415,6 +438,13 @@ textarea {
 @media (max-width: 768px) {
   .top-nav {
     margin-top: 0.9rem;
+    flex-wrap: wrap;
+    gap: 0.7rem;
+  }
+
+  .top-nav-actions {
+    width: 100%;
+    justify-content: flex-end;
   }
 
   .search-form {

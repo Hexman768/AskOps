@@ -4,6 +4,7 @@ const searchInput = document.getElementById('search-input');
 const searchStatus = document.getElementById('search-status');
 const clearSearchButton = document.getElementById('clear-search');
 const navCreateButton = document.getElementById('nav-create-btn');
+const navGitHubButton = document.getElementById('nav-github-btn');
 
 const createModal = document.getElementById('create-modal');
 const createIssueForm = document.getElementById('create-issue-form');
@@ -12,10 +13,22 @@ const createSubmitButton = document.getElementById('create-submit-btn');
 const createIssueTypeSelect = document.getElementById('create-issue-type');
 const createDifficultySelect = document.getElementById('create-difficulty');
 const modalCloseElements = document.querySelectorAll('[data-close-modal="true"]');
+const githubModal = document.getElementById('github-modal');
+const githubConnectForm = document.getElementById('github-connect-form');
+const githubConnectStatus = document.getElementById('github-connect-status');
+const githubStatusCopy = document.getElementById('github-status-copy');
+const githubModalCloseElements = document.querySelectorAll('[data-close-github-modal="true"]');
 
 const RECENT_ISSUE_LIMIT = 6;
 let allIssues = [];
 let closeModalTimer = null;
+let closeGitHubModalTimer = null;
+let isGitHubConnected = false;
+
+function updateCreateSubmitState() {
+  createSubmitButton.disabled = !isGitHubConnected;
+  createSubmitButton.setAttribute('aria-disabled', String(!isGitHubConnected));
+}
 
 function escapeHtml(value) {
   return String(value)
@@ -93,6 +106,11 @@ function openCreateModal() {
     createModal.classList.add('is-open');
   });
   document.body.classList.add('modal-open');
+  updateCreateSubmitState();
+
+  if (!isGitHubConnected) {
+    createStatus.textContent = 'Connect GitHub to enable submit.';
+  }
 }
 
 function closeCreateModal() {
@@ -105,6 +123,34 @@ function closeCreateModal() {
     createModal.setAttribute('aria-hidden', 'true');
     createModal.classList.remove('is-closing');
     closeModalTimer = null;
+  }, 260);
+}
+
+function openGitHubModal() {
+  if (closeGitHubModalTimer) {
+    clearTimeout(closeGitHubModalTimer);
+    closeGitHubModalTimer = null;
+  }
+
+  githubModal.hidden = false;
+  githubModal.setAttribute('aria-hidden', 'false');
+  githubModal.classList.remove('is-closing');
+  requestAnimationFrame(() => {
+    githubModal.classList.add('is-open');
+  });
+  document.body.classList.add('modal-open');
+}
+
+function closeGitHubModal() {
+  githubModal.classList.remove('is-open');
+  githubModal.classList.add('is-closing');
+  document.body.classList.remove('modal-open');
+
+  closeGitHubModalTimer = setTimeout(() => {
+    githubModal.hidden = true;
+    githubModal.setAttribute('aria-hidden', 'true');
+    githubModal.classList.remove('is-closing');
+    closeGitHubModalTimer = null;
   }, 260);
 }
 
@@ -144,6 +190,32 @@ async function loadIssues() {
   updateLanding();
 }
 
+async function refreshGitHubStatus() {
+  try {
+    const response = await fetch('/api/github/auth-status');
+    const status = await response.json();
+    isGitHubConnected = Boolean(status.connected);
+
+    if (isGitHubConnected) {
+      navGitHubButton.textContent = 'GitHub Connected';
+      const source = status.source ? ` (${status.source})` : '';
+      const login = status.login ? ` as ${status.login}` : '';
+      githubStatusCopy.textContent = `GitHub is connected${login}${source}. You can update your token below.`;
+    } else {
+      navGitHubButton.textContent = 'Connect GitHub';
+      githubStatusCopy.textContent =
+        'Save a personal GitHub token securely in your OS keychain so PRs can be created without gh CLI.';
+    }
+
+    updateCreateSubmitState();
+  } catch {
+    isGitHubConnected = false;
+    updateCreateSubmitState();
+    navGitHubButton.textContent = 'Connect GitHub';
+    githubStatusCopy.textContent = 'Unable to check GitHub connection status right now.';
+  }
+}
+
 searchForm.addEventListener('submit', (event) => {
   event.preventDefault();
   updateLanding(searchInput.value);
@@ -159,15 +231,32 @@ navCreateButton.addEventListener('click', () => {
   openCreateModal();
 });
 
+navGitHubButton.addEventListener('click', () => {
+  githubConnectStatus.textContent = '';
+  openGitHubModal();
+});
+
 for (const closeElement of modalCloseElements) {
   closeElement.addEventListener('click', () => {
     closeCreateModal();
   });
 }
 
+for (const closeElement of githubModalCloseElements) {
+  closeElement.addEventListener('click', () => {
+    closeGitHubModal();
+  });
+}
+
 window.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && !createModal.hidden) {
+  if (event.key !== 'Escape') return;
+
+  if (!createModal.hidden) {
     closeCreateModal();
+  }
+
+  if (!githubModal.hidden) {
+    closeGitHubModal();
   }
 });
 
@@ -190,6 +279,12 @@ createIssueForm.addEventListener('submit', async (event) => {
   createStatus.textContent = 'Creating pull request...';
 
   try {
+    if (!isGitHubConnected) {
+      createStatus.textContent = 'Connect GitHub first to securely store your token.';
+      openGitHubModal();
+      return;
+    }
+
     const payload = Object.fromEntries(new FormData(createIssueForm).entries());
     const response = await fetch('/api/issues/propose-pr', {
       method: 'POST',
@@ -226,9 +321,36 @@ createIssueForm.addEventListener('submit', async (event) => {
   }
 });
 
+githubConnectForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  githubConnectStatus.textContent = 'Saving token securely...';
+
+  const payload = Object.fromEntries(new FormData(githubConnectForm).entries());
+
+  try {
+    const response = await fetch('/api/github/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const result = await response.json();
+    if (!response.ok) {
+      githubConnectStatus.textContent = result.error || 'Unable to connect GitHub.';
+      return;
+    }
+
+    githubConnectStatus.textContent = `Connected${result.login ? ` as ${result.login}` : ''}.`;
+    githubConnectForm.reset();
+    await refreshGitHubStatus();
+  } catch {
+    githubConnectStatus.textContent = 'Unable to connect GitHub right now.';
+  }
+});
+
 (async function init() {
   try {
-    await Promise.all([loadMetadata(), loadIssues()]);
+    await Promise.all([loadMetadata(), loadIssues(), refreshGitHubStatus()]);
   } catch {
     searchStatus.textContent = 'Unable to load issue data right now.';
   }
