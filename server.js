@@ -1,11 +1,20 @@
 const express = require('express');
+const { Octokit } = require('@octokit/rest');
+const { execFile } = require('child_process');
 const fs = require('fs/promises');
+const os = require('os');
 const path = require('path');
+const { promisify } = require('util');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'issues.json');
+const REPO_ROOT = __dirname;
+const BASE_BRANCH = 'master';
+const execFileAsync = promisify(execFile);
+const KEYCHAIN_SERVICE = 'askops-github-token';
+const KEYCHAIN_ACCOUNT = 'default';
 
 const ISSUE_TYPES = ['IT', 'Password', 'Software Engineering', 'Solution', 'Product', 'Other'];
 const DIFFICULTY_LEVELS = ['Very Easy', 'Easy', 'Medium', 'Hard', 'Very Hard'];
@@ -30,6 +39,226 @@ async function readIssues() {
 
 async function writeIssues(issues) {
   await fs.writeFile(DATA_FILE, JSON.stringify(issues, null, 2));
+}
+
+async function runCommand(command, args, cwd = REPO_ROOT) {
+  try {
+    const { stdout, stderr } = await execFileAsync(command, args, { cwd });
+    return { stdout: stdout?.trim() || '', stderr: stderr?.trim() || '' };
+  } catch (error) {
+    const message = error.stderr?.trim() || error.stdout?.trim() || error.message || 'Command failed.';
+    throw new Error(`${command} ${args.join(' ')} failed: ${message}`);
+  }
+}
+
+async function commandExists(command) {
+  try {
+    await execFileAsync('which', [command]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function runCommandOptional(command, args, cwd = REPO_ROOT) {
+  try {
+    const { stdout, stderr } = await execFileAsync(command, args, { cwd });
+    return {
+      ok: true,
+      stdout: stdout?.trim() || '',
+      stderr: stderr?.trim() || ''
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      stdout: error.stdout?.trim() || '',
+      stderr: error.stderr?.trim() || '',
+      error
+    };
+  }
+}
+
+function slugify(value) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+}
+
+function parseGitHubRemote(remoteUrl) {
+  if (!remoteUrl) return null;
+
+  const sshMatch = remoteUrl.match(/github\.com[:/](.+?)\/(.+?)(?:\.git)?$/i);
+  if (sshMatch) return { owner: sshMatch[1], repo: sshMatch[2] };
+
+  return null;
+}
+
+async function createGitHubPrWithApi({ owner, repo, headBranch, title, body }) {
+  const tokenInfo = await getGitHubToken();
+  if (!tokenInfo?.token) return null;
+
+  const octokit = new Octokit({ auth: tokenInfo.token });
+  const response = await octokit.pulls.create({
+    owner,
+    repo,
+    title,
+    body,
+    base: BASE_BRANCH,
+    head: headBranch
+  });
+
+  return response.data.html_url || null;
+}
+
+async function getTokenFromKeychain() {
+  const lookup = await runCommandOptional('security', [
+    'find-generic-password',
+    '-a',
+    KEYCHAIN_ACCOUNT,
+    '-s',
+    KEYCHAIN_SERVICE,
+    '-w'
+  ]);
+
+  if (!lookup.ok) return null;
+  return lookup.stdout || null;
+}
+
+async function saveTokenToKeychain(token) {
+  await runCommand('security', [
+    'add-generic-password',
+    '-a',
+    KEYCHAIN_ACCOUNT,
+    '-s',
+    KEYCHAIN_SERVICE,
+    '-w',
+    token,
+    '-U'
+  ]);
+}
+
+async function getGitHubToken() {
+  if (process.env.GITHUB_TOKEN) {
+    return {
+      token: process.env.GITHUB_TOKEN,
+      source: 'env'
+    };
+  }
+
+  const keychainToken = await getTokenFromKeychain();
+  if (keychainToken) {
+    return {
+      token: keychainToken,
+      source: 'keychain'
+    };
+  }
+
+  return null;
+}
+
+async function getGitHubIdentity(token) {
+  const octokit = new Octokit({ auth: token });
+  const response = await octokit.users.getAuthenticated();
+  return response.data?.login || null;
+}
+
+async function createIssuePr(issueInput) {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'askops-pr-'));
+  let worktreeAttached = false;
+
+  try {
+    const { stdout: branchCheck } = await runCommand('git', ['rev-parse', '--verify', BASE_BRANCH], REPO_ROOT);
+    if (!branchCheck) {
+      throw new Error(`Base branch "${BASE_BRANCH}" was not found locally.`);
+    }
+
+    await runCommand('git', ['worktree', 'add', '--detach', tempRoot, BASE_BRANCH], REPO_ROOT);
+    worktreeAttached = true;
+
+    const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+    const issueSlug = slugify(issueInput.title) || 'new-issue';
+    const branchName = `issue/${timestamp}-${issueSlug}`;
+
+    await runCommand('git', ['checkout', '-b', branchName], tempRoot);
+
+    const tempDataFile = path.join(tempRoot, 'data', 'issues.json');
+    const rawIssues = await fs.readFile(tempDataFile, 'utf-8');
+    const issues = JSON.parse(rawIssues);
+    const nextId = issues.length > 0 ? Math.max(...issues.map((item) => Number(item.id) || 0)) + 1 : 1;
+
+    const newIssue = {
+      id: nextId,
+      title: issueInput.title.trim(),
+      problem: issueInput.problem.trim(),
+      solution: issueInput.solution.trim(),
+      issueType: issueInput.issueType,
+      difficulty: issueInput.difficulty,
+      solutionConfidence: issueInput.solutionConfidence,
+      createdAt: new Date().toISOString()
+    };
+
+    issues.push(newIssue);
+    await fs.writeFile(tempDataFile, JSON.stringify(issues, null, 2));
+
+    await runCommand('git', ['add', 'data/issues.json'], tempRoot);
+    await runCommand('git', ['commit', '-m', `Add AskOps issue: ${newIssue.title}`], tempRoot);
+    await runCommand('git', ['push', '-u', 'origin', branchName], tempRoot);
+
+    const prTitle = `Add AskOps issue: ${newIssue.title}`;
+    const prBody = [
+      '## AskOps Issue Submission',
+      '',
+      `- Title: ${newIssue.title}`,
+      `- Type: ${newIssue.issueType}`,
+      `- Difficulty: ${newIssue.difficulty}`,
+      `- Confidence: ${newIssue.solutionConfidence}%`,
+      '',
+      'Submitted from the AskOps Create Issue modal.'
+    ].join('\n');
+
+    let prUrl = null;
+    const { stdout: remoteUrl } = await runCommand('git', ['config', '--get', 'remote.origin.url'], REPO_ROOT);
+    const repoInfo = parseGitHubRemote(remoteUrl);
+
+    if (!repoInfo) {
+      throw new Error('Unable to parse GitHub remote URL.');
+    }
+
+    prUrl = await createGitHubPrWithApi({
+      owner: repoInfo.owner,
+      repo: repoInfo.repo,
+      headBranch: branchName,
+      title: prTitle,
+      body: prBody
+    });
+
+    if (!prUrl && (await commandExists('gh'))) {
+      const { stdout } = await runCommand(
+        'gh',
+        ['pr', 'create', '--base', BASE_BRANCH, '--head', branchName, '--title', prTitle, '--body', prBody],
+        tempRoot
+      );
+      prUrl = stdout.split('\n').find((line) => line.startsWith('http')) || null;
+    }
+
+    if (!prUrl) {
+      throw new Error(
+        'PR creation failed. Connect GitHub in the app (recommended) or set GITHUB_TOKEN, or install/authenticate gh CLI.'
+      );
+    }
+
+    return { issue: newIssue, branchName, prUrl };
+  } finally {
+    if (worktreeAttached) {
+      try {
+        await runCommand('git', ['worktree', 'remove', '--force', tempRoot], REPO_ROOT);
+      } catch {
+        // no-op cleanup safeguard
+      }
+    }
+  }
 }
 
 function validateIssue(payload) {
@@ -65,6 +294,44 @@ function validateIssue(payload) {
 
 app.get('/api/metadata', (_req, res) => {
   res.json({ issueTypes: ISSUE_TYPES, difficultyLevels: DIFFICULTY_LEVELS });
+});
+
+app.get('/api/github/auth-status', async (_req, res) => {
+  try {
+    const tokenInfo = await getGitHubToken();
+    if (!tokenInfo) {
+      return res.json({ connected: false, source: null, login: null });
+    }
+
+    const login = await getGitHubIdentity(tokenInfo.token);
+    return res.json({
+      connected: true,
+      source: tokenInfo.source,
+      login
+    });
+  } catch (error) {
+    return res.status(500).json({
+      connected: false,
+      error: error.message || 'Unable to validate GitHub token.'
+    });
+  }
+});
+
+app.post('/api/github/connect', async (req, res) => {
+  const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+  if (!token) {
+    return res.status(400).json({ error: 'GitHub token is required.' });
+  }
+
+  try {
+    const login = await getGitHubIdentity(token);
+    await saveTokenToKeychain(token);
+    return res.status(201).json({ connected: true, source: 'keychain', login });
+  } catch (error) {
+    return res.status(400).json({
+      error: error.message || 'Unable to validate and save the GitHub token.'
+    });
+  }
 });
 
 app.get('/api/issues', async (req, res) => {
@@ -137,6 +404,32 @@ app.post('/api/issues', async (req, res) => {
   await writeIssues(issues);
 
   return res.status(201).json(newIssue);
+});
+
+app.post('/api/issues/propose-pr', async (req, res) => {
+  const payload = req.body;
+  const { errors, confidence } = validateIssue(payload);
+
+  if (errors.length > 0) {
+    return res.status(400).json({ errors });
+  }
+
+  try {
+    const result = await createIssuePr({
+      title: payload.title,
+      problem: payload.problem,
+      solution: payload.solution,
+      issueType: payload.issueType,
+      difficulty: payload.difficulty,
+      solutionConfidence: confidence
+    });
+
+    return res.status(201).json(result);
+  } catch (error) {
+    return res.status(500).json({
+      error: error.message || 'Unable to create pull request for this issue.'
+    });
+  }
 });
 
 app.listen(PORT, async () => {

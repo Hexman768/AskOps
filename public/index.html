@@ -7,6 +7,14 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <nav class="top-nav">
+      <a href="/" class="nav-home">Home</a>
+      <div class="top-nav-actions">
+        <button id="nav-github-btn" type="button" class="secondary-btn">Connect GitHub</button>
+        <button id="nav-create-btn" type="button">Create Issue</button>
+      </div>
+    </nav>
+
     <main class="container">
       <header class="hero">
         <p class="eyebrow">AskOps Knowledge Base</p>
@@ -35,6 +43,85 @@
 
       <section id="issue-list" class="issue-list"></section>
     </main>
+
+    <section id="create-modal" class="modal" hidden aria-hidden="true">
+      <div class="modal-backdrop" data-close-modal="true"></div>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="create-modal-title">
+        <div class="modal-head">
+          <h2 id="create-modal-title">Create Issue Proposal</h2>
+          <button type="button" class="secondary-btn modal-close" data-close-modal="true">Close</button>
+        </div>
+
+        <p class="modal-copy">
+          Submitting creates a branch, updates <code>data/issues.json</code>, pushes to <code>origin</code>,
+          and opens a pull request to <code>master</code>.
+        </p>
+
+        <form id="create-issue-form" class="modal-form">
+          <label>
+            Title
+            <input type="text" name="title" required minlength="3" />
+          </label>
+
+          <label>
+            Problem Description
+            <textarea name="problem" required minlength="10"></textarea>
+          </label>
+
+          <label>
+            Solution
+            <textarea name="solution" required minlength="10"></textarea>
+          </label>
+
+          <div class="grid two-col">
+            <label>
+              Issue Type
+              <select id="create-issue-type" name="issueType" required></select>
+            </label>
+
+            <label>
+              Difficulty
+              <select id="create-difficulty" name="difficulty" required></select>
+            </label>
+          </div>
+
+          <label>
+            Solution Confidence (0-100)
+            <input type="number" name="solutionConfidence" min="0" max="100" required />
+          </label>
+
+          <div class="modal-actions">
+            <button type="submit" id="create-submit-btn">Submit And Open PR</button>
+          </div>
+          <p id="create-status" class="search-status"></p>
+        </form>
+      </div>
+    </section>
+
+    <section id="github-modal" class="modal" hidden aria-hidden="true">
+      <div class="modal-backdrop" data-close-github-modal="true"></div>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="github-modal-title">
+        <div class="modal-head">
+          <h2 id="github-modal-title">Connect GitHub</h2>
+          <button type="button" class="secondary-btn modal-close" data-close-github-modal="true">Close</button>
+        </div>
+
+        <p class="modal-copy" id="github-status-copy">
+          Save a personal GitHub token securely in your OS keychain so PRs can be created without gh CLI.
+        </p>
+
+        <form id="github-connect-form" class="modal-form">
+          <label>
+            GitHub Token
+            <input type="password" name="token" autocomplete="off" required />
+          </label>
+          <div class="modal-actions">
+            <button type="submit" id="github-connect-submit">Save Token Securely</button>
+          </div>
+          <p id="github-connect-status" class="search-status"></p>
+        </form>
+      </div>
+    </section>
 
     <script src="app.js"></script>
   </body>
