@@ -20,10 +20,14 @@ const githubStatusCopy = document.getElementById('github-status-copy');
 const githubModalCloseElements = document.querySelectorAll('[data-close-github-modal="true"]');
 
 const RECENT_ISSUE_LIMIT = 6;
+const STATIC_DATA_PATH = '../data/issues.json';
+const FALLBACK_ISSUE_TYPES = ['IT', 'Password', 'Software Engineering', 'Solution', 'Product', 'Other'];
+const FALLBACK_DIFFICULTIES = ['Very Easy', 'Easy', 'Medium', 'Hard', 'Very Hard'];
 let allIssues = [];
 let closeModalTimer = null;
 let closeGitHubModalTimer = null;
 let isGitHubConnected = false;
+let apiAvailable = true;
 
 function updateCreateSubmitState() {
   createSubmitButton.disabled = !isGitHubConnected;
@@ -44,7 +48,7 @@ function issueCard(issue) {
   return `
     <a
       class="issue-link-card"
-      href="/issue.html?id=${encodeURIComponent(issue.id)}"
+      href="./issue.html?id=${encodeURIComponent(issue.id)}"
       data-issue-id="${encodeURIComponent(issue.id)}"
       aria-label="Open issue ${escapeHtml(issue.title)}"
     >
@@ -171,26 +175,61 @@ function populateIssueFormMetadata(metadata) {
 }
 
 async function loadMetadata() {
-  const metadataResponse = await fetch('/api/metadata');
-  if (!metadataResponse.ok) {
-    throw new Error('Unable to load issue metadata.');
-  }
+  try {
+    const metadataResponse = await fetch('/api/metadata');
+    if (!metadataResponse.ok) {
+      throw new Error('Metadata API unavailable.');
+    }
 
-  const metadata = await metadataResponse.json();
-  populateIssueFormMetadata(metadata);
+    const metadata = await metadataResponse.json();
+    populateIssueFormMetadata(metadata);
+    apiAvailable = true;
+    return;
+  } catch {
+    apiAvailable = false;
+    populateIssueFormMetadata({
+      issueTypes: FALLBACK_ISSUE_TYPES,
+      difficultyLevels: FALLBACK_DIFFICULTIES
+    });
+  }
 }
 
 async function loadIssues() {
-  const issuesResponse = await fetch('/api/issues');
-  if (!issuesResponse.ok) {
-    throw new Error('Unable to load issues.');
-  }
+  try {
+    const issuesResponse = await fetch('/api/issues');
+    if (!issuesResponse.ok) {
+      throw new Error('Issues API unavailable.');
+    }
 
-  allIssues = await issuesResponse.json();
-  updateLanding();
+    allIssues = await issuesResponse.json();
+    apiAvailable = true;
+    updateLanding();
+    return;
+  } catch {
+    const staticResponse = await fetch(STATIC_DATA_PATH);
+    if (!staticResponse.ok) {
+      throw new Error('Unable to load issues.');
+    }
+
+    allIssues = await staticResponse.json();
+    apiAvailable = false;
+    updateLanding();
+  }
 }
 
 async function refreshGitHubStatus() {
+  if (!apiAvailable) {
+    isGitHubConnected = false;
+    updateCreateSubmitState();
+    navGitHubButton.textContent = 'GitHub (Server Only)';
+    navGitHubButton.disabled = true;
+    githubStatusCopy.textContent =
+      'GitHub Pages mode detected. PR creation requires running the Node server backend.';
+    return;
+  }
+
+  navGitHubButton.disabled = false;
+
   try {
     const response = await fetch('/api/github/auth-status');
     const status = await response.json();
@@ -350,7 +389,8 @@ githubConnectForm.addEventListener('submit', async (event) => {
 
 (async function init() {
   try {
-    await Promise.all([loadMetadata(), loadIssues(), refreshGitHubStatus()]);
+    await Promise.all([loadMetadata(), loadIssues()]);
+    await refreshGitHubStatus();
   } catch {
     searchStatus.textContent = 'Unable to load issue data right now.';
   }

@@ -7,6 +7,8 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
+const STATIC_DATA_PATH = '../data/issues.json';
+
 function formatDate(value) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
@@ -74,10 +76,13 @@ async function loadIssue() {
       return;
     }
 
-    const allIssuesResponse = await fetch('/api/issues');
+    let allIssuesResponse = await fetch('/api/issues');
     if (!allIssuesResponse.ok) {
-      setPageError('This issue could not be found in the dataset.');
-      return;
+      allIssuesResponse = await fetch(STATIC_DATA_PATH);
+      if (!allIssuesResponse.ok) {
+        setPageError('This issue could not be found in the dataset.');
+        return;
+      }
     }
 
     const allIssues = await allIssuesResponse.json();
