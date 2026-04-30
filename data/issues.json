@@ -18,5 +18,15 @@
     "difficulty": "Hard",
     "solutionConfidence": 70,
     "createdAt": "2026-04-13T20:30:00.000Z"
+  },
+  {
+    "id": 3,
+    "title": "Micronaut Tests not being recognized by IntelliJ",
+    "problem": "After opening a test class in Intellij, the @MicronautTest annotation is not properly highlighted, and the test class does not give you the option to run the tests, or you are able to run the tests, but they do not actually run, and they just report that no tests are found in that test class.",
+    "solution": "1.) Open maven on the right sidebar in IntelliJ\n2.) Click Sync all maven projects\n3.) Click Reload all maven projects\n4.) Wait until both builds have completed and run the test class again. \n\nYou may also need to perform a \"mvn clean install\" at the command line from the terminal inside IntelliJ.",
+    "issueType": "IT",
+    "difficulty": "Easy",
+    "solutionConfidence": 75,
+    "createdAt": "2026-04-29T17:32:33.404Z"
   }
 ]
